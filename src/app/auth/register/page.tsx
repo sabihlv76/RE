@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShieldCheck, Mail, Lock, User, ArrowRight, Briefcase } from "lucide-react";
+import { ShieldCheck, Mail, Lock, User, ArrowRight, Briefcase, CheckCircle2, MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { motion } from "framer-motion";
 
@@ -23,11 +23,12 @@ export default function RegisterPage() {
     setError(null);
 
     try {
-      // 1. Sign up the user in Supabase Auth
+      // 1. Sign up the user with a dynamic redirect back to this site's callback
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: fullName,
             role: role,
@@ -38,21 +39,16 @@ export default function RegisterPage() {
       if (signUpError) throw signUpError;
 
       if (data.user) {
-        // 2. Insert into profiles table
-        const { error: profileError } = await supabase.from("profiles").insert({
+        // 2. Insert profile row (may fail if email confirmation is pending — that's OK)
+        await supabase.from("profiles").upsert({
           id: data.user.id,
           full_name: fullName,
           email: email,
           role: role,
         });
 
-        if (profileError) throw profileError;
-
+        // 3. Show email verification prompt — do NOT redirect yet
         setSuccess(true);
-        // Automatically sign in or redirect
-        setTimeout(() => {
-          window.location.href = role === "partner" ? "/partner" : "/dashboard";
-        }, 1500);
       }
     } catch (err: any) {
       console.error("Registration error:", err);
@@ -62,9 +58,84 @@ export default function RegisterPage() {
     }
   };
 
+  // ─── Email Verification Success Screen ───────────────────────────────────
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-24">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="bg-card max-w-md w-full rounded-3xl shadow-xl border border-border overflow-hidden text-center"
+        >
+          <div className="bg-brand-green p-8 text-white">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+              className="flex justify-center mb-4"
+            >
+              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center">
+                <MailCheck size={40} className="text-white" />
+              </div>
+            </motion.div>
+            <h1 className="text-2xl font-bold font-display">Check Your Email!</h1>
+            <p className="opacity-80 text-sm mt-2">
+              We&apos;ve sent a verification link to
+            </p>
+            <p className="font-bold text-brand-gold mt-1 break-all">{email}</p>
+          </div>
+
+          <div className="p-8 space-y-5">
+            <div className="space-y-3 text-left">
+              {[
+                "Open the email from RwandaExplore",
+                "Click the \"Confirm your email\" button",
+                "You'll be redirected to sign in",
+              ].map((step, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-brand-green text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    {i + 1}
+                  </div>
+                  <p className="text-sm text-muted-foreground font-medium">{step}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-700 font-medium">
+                  Can&apos;t find the email? Check your spam or junk folder. The link expires in 24 hours.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/auth/login"
+              className="block w-full text-center bg-brand-green text-white py-3.5 rounded-xl font-bold hover:bg-brand-green/90 transition-all"
+            >
+              Go to Sign In
+            </Link>
+            <p className="text-xs text-center text-muted-foreground">
+              Wrong email?{" "}
+              <button
+                onClick={() => { setSuccess(false); setEmail(""); setPassword(""); }}
+                className="text-brand-green font-bold hover:underline"
+              >
+                Register again
+              </button>
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ─── Registration Form ────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-6 py-24">
-      <motion.div 
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-24">
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -80,9 +151,9 @@ export default function RegisterPage() {
           <p className="opacity-80 text-sm mt-1 relative z-10">Start your adventure or manage your tourism business</p>
         </div>
 
-        <form onSubmit={handleRegister} className="p-8 space-y-6">
+        <form onSubmit={handleRegister} className="p-6 sm:p-8 space-y-6">
           {error && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-100 font-medium"
@@ -91,22 +162,12 @@ export default function RegisterPage() {
             </motion.div>
           )}
 
-          {success && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-green-50 text-green-700 p-4 rounded-xl text-sm border border-green-100 font-medium text-center"
-            >
-              Registration successful! Redirecting you now...
-            </motion.div>
-          )}
-
           {/* Role Selection */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 ml-1">
               I want to join as a
             </label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setRole("tourist")}
@@ -118,7 +179,7 @@ export default function RegisterPage() {
               >
                 <User size={24} className={role === "tourist" ? "text-brand-green mb-2" : "text-muted-foreground mb-2"} />
                 <span className="text-sm font-bold">Tourist</span>
-                <span className="text-[10px] opacity-80 mt-1">Book services & events</span>
+                <span className="text-[10px] opacity-80 mt-1">Book services &amp; events</span>
               </button>
 
               <button
@@ -132,7 +193,7 @@ export default function RegisterPage() {
               >
                 <Briefcase size={24} className={role === "partner" ? "text-brand-green mb-2" : "text-muted-foreground mb-2"} />
                 <span className="text-sm font-bold">Partner</span>
-                <span className="text-[10px] opacity-80 mt-1">List & offer experiences</span>
+                <span className="text-[10px] opacity-80 mt-1">List &amp; offer experiences</span>
               </button>
             </div>
           </div>
@@ -189,10 +250,10 @@ export default function RegisterPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading || success}
+            disabled={loading}
             className="w-full bg-brand-green text-white py-4 rounded-xl font-bold hover:bg-brand-green/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg hover:shadow-xl"
           >
-            {loading ? "Creating Account..." : "Sign Up"}
+            {loading ? "Creating Account..." : "Sign Up & Verify Email"}
             <ArrowRight size={20} />
           </button>
 
